@@ -1,0 +1,7 @@
+Django==5.2.4
+django-debug-toolbar==6.0.0
+django-filter==25.1
+djangorestframework==3.16.0
+djoser==2.3.3
+pip==24.0
+
