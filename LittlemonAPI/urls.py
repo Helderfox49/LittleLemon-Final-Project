@@ -2,10 +2,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # path('groups/manager/users/', views.manager_list, name='manager-list')
     path('menu-items/', views.MenuItemListCreateView.as_view(), name='menu-item-list'),
     path('menu-items/<int:pk>', views.MenuItemRetrieveUpdateDeleteView.as_view(), name='menu-item-detail'),
-    # path('menu-items/<int:pk>', views.MenuItemUpdateDeleteView.as_view(), name='menu-item-update'),
+    path('cart/menu-items/', views.CartCustomerView.as_view()),
 
     path('groups/manager/users/', views.ManagerUserGroupView.as_view()),
     path('groups/manager/users/<int:userId>', views.ManagerUserGroupView.as_view()),

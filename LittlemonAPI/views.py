@@ -1,13 +1,14 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.views import APIView
 from rest_framework import status, generics
 from django.contrib.auth.models import User, Group
+from decimal import Decimal
 
-from .permissions import IsManager, IsCustomer, IsDelivery
-from .serializers import UserSerializer, MenuItemSerializer
-from .models import MenuItem
+from .permissions import IsManager, IsCustomer, IsDeliveryCrew
+from .serializers import UserSerializer, MenuItemSerializer, CartSerializer
+from .models import MenuItem, Cart, Category
 
 
 # Class View for managing menu Item
@@ -17,8 +18,8 @@ class MenuItemListCreateView(generics.ListCreateAPIView):
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsManager()]
-        return [IsAuthenticated()]
+            return [IsManager(), IsAdminUser()]
+        return []
     
     def post(self, request, *args, **kwargs):
         serializer_item = MenuItemSerializer(data=request.data)
@@ -35,13 +36,71 @@ class MenuItemRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     def get_permissions(self):
         if self.request.method in ['PUT', 'PATCH', 'DELETE']:
             return ([IsManager()])
-        return [IsAuthenticated()]
+        return [IsCustomer(), IsManager()]
+
+
+# Class View for managing Customer Cart
+class CartCustomerView(APIView):
+    def get_permissions(self):
+        return ([IsCustomer()])
+    
+    def get_queryset(self):
+        return Cart.objects.filter(user=self.request.user).select_related('menuitem')
+    
+    def get(self, request, *args, **kwargs):
+        cart_items = self.get_queryset()
+        serializer = CartSerializer(cart_items, many=True)
+
+        total = sum(item.price for item in cart_items)
+        cart_data = {
+            'items' : serializer.data,
+            'total' : total
+        }
+
+        return Response(cart_data, status=status.HTTP_200_OK)
+    
+    def post(self, request, *args, **kwargs):
+        menuitem_id = request.data.get('menuitem_id')
+        quantity =  request.data.get('quantity', 1)
+        print(quantity)
+        
+        if not menuitem_id:
+            return Response({"error": "menuitem_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            menuitem = MenuItem.objects.get(id=menuitem_id)
+        except MenuItem.DoesNotExist:
+            return Response({"error": "menuitem not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        cart_item, created = Cart.objects.get_or_create(
+            user=request.user,
+            menuitem=menuitem,
+            defaults={
+                'quantity': quantity,
+                'unit_price': menuitem.price,
+                'price': Decimal(str(menuitem.price)) * Decimal(quantity)
+            }
+        )
+
+        if not created:
+            cart_item.quantity += int(quantity)
+            cart_item.price = cart_item.quantity * cart_item.unit_price
+            cart_item.save() 
+
+        serializer = CartSerializer(cart_item)
+        return Response(data=serializer.data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, *args, **kwargs):
+        self.get_queryset().delete()
+        return Response({"message": "Cart Emptied"}, status=status.HTTP_204_NO_CONTENT)
 
 
 # Class View for managing user groups (Manager Group)
 class ManagerUserGroupView(APIView):
     def get_permissions(self):
-        return ([IsManager()])
+        if self.request.method == 'GET':
+            return ([IsManager(), IsAdminUser()])
+        return ([IsAdminUser()])
     
     def get(self, request):
         managers = User.objects.filter(groups__name='Manager')

@@ -1,0 +1,12 @@
+#This file contains username and password
+
++----------+----------------+----------------+
+| User     | Password       | Role           |
++----------+----------------+----------------+
+| admin    | lemon@adm!     | admin, Manager |
+| bobby    | lemon@bob!     | Customer       |
+| guyzo    | lemon@guy!     | Customer       |
+| livreur  | lemon@liv!     | Delivery Crew  |
+| sarah    | lemon@sar!     | Manager        |
++----------+----------------+----------------+
+
