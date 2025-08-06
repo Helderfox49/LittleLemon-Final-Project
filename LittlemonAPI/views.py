@@ -2,11 +2,40 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
-from rest_framework import status
+from rest_framework import status, generics
 from django.contrib.auth.models import User, Group
 
-from .permissions import IsManager
-from .serializers import UserSerializer
+from .permissions import IsManager, IsCustomer, IsDelivery
+from .serializers import UserSerializer, MenuItemSerializer
+from .models import MenuItem
+
+
+# Class View for managing menu Item
+class MenuItemListCreateView(generics.ListCreateAPIView):
+    queryset = MenuItem.objects.all()
+    serializer_class = MenuItemSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsManager()]
+        return [IsAuthenticated()]
+    
+    def post(self, request, *args, **kwargs):
+        serializer_item = MenuItemSerializer(data=request.data)
+        serializer_item.is_valid(raise_exception=True)
+        serializer_item.save()
+        return Response(data=serializer_item.data, status=status.HTTP_201_CREATED)
+
+
+class MenuItemRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = MenuItem.objects.all()
+    serializer_class = MenuItemSerializer
+    lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            return ([IsManager()])
+        return [IsAuthenticated()]
 
 
 # Class View for managing user groups (Manager Group)
@@ -16,8 +45,8 @@ class ManagerUserGroupView(APIView):
     
     def get(self, request):
         managers = User.objects.filter(groups__name='Manager')
-        serializers = UserSerializer(managers, many=True)
-        return Response(serializers.data)
+        serializer = UserSerializer(managers, many=True)
+        return Response(serializer.data)
 
     def post(self, request):
         username = request.data.get('username')
