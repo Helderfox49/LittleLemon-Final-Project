@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from django.contrib.auth.models import User
 
-from .models import MenuItem, Category, Cart
+from .models import MenuItem, Category, Cart, Order, OrderItem
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -38,6 +38,7 @@ class UserSerializer(serializers.ModelSerializer):
 class CartSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     user_id = serializers.IntegerField(write_only=True)
+    delivery_crew_id = serializers.IntegerField(write_only=True)
     menuitem = MenuItemSerializer(read_only=True)
     menuitem_id = serializers.IntegerField(write_only=True)
     quantity = serializers.IntegerField()
@@ -52,4 +53,24 @@ class CartSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Cart
-        fields = ['user', 'user_id', 'menuitem', 'menuitem_id', 'quantity', 'unit_price', 'price'] 
+        fields = ['user', 'user_id', 'delivery_crew_id', 'menuitem', 'menuitem_id', 'quantity', 'unit_price', 'price'] 
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    menuitem_name = serializers.CharField(source='menuitem.title', read_only=True)
+    
+    class Meta:
+        model = OrderItem
+        fields = ['menuitem', 'menuitem_name', 'quantity', 'unit_price', 'price']
+        extra_kwargs = {
+            'menuitem': {'write_only': True}
+        }
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, source='orderitem_set')
+    
+    class Meta:
+        model = Order
+        fields = ['id', 'user', 'status', 'total', 'date', 'items']
+        read_only_fields = ['user', 'total', 'date', 'items']

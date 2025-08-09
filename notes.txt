@@ -1,4 +1,4 @@
-#This file contains username and password
+#This file contains username, password and role for the users
 
 +----------+----------------+----------------+
 | User     | Password       | Role           |
@@ -10,3 +10,5 @@
 | sarah    | lemon@sar!     | Manager        |
 +----------+----------------+----------------+
 
+
+When entering status value for testing whe have decided that 0 is False aand other numerical value is True

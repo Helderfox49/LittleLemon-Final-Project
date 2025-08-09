@@ -4,11 +4,14 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.views import APIView
 from rest_framework import status, generics
 from django.contrib.auth.models import User, Group
+from django.db import transaction
 from decimal import Decimal
+from datetime import datetime
 
-from .permissions import IsManager, IsCustomer, IsDeliveryCrew
-from .serializers import UserSerializer, MenuItemSerializer, CartSerializer
-from .models import MenuItem, Cart, Category
+from .utils import is_user_in_group
+from .permissions import IsManager, IsCustomer, IsDeliveryCrew, IsCustomerOrManagerOrDeliveryCrew, IsManagerOrDeliveryCrew
+from .serializers import UserSerializer, MenuItemSerializer, CartSerializer, OrderSerializer, OrderItemSerializer
+from .models import MenuItem, Cart, Category, Order, OrderItem
 
 
 # Class View for managing menu Item
@@ -62,7 +65,6 @@ class CartCustomerView(APIView):
     def post(self, request, *args, **kwargs):
         menuitem_id = request.data.get('menuitem_id')
         quantity =  request.data.get('quantity', 1)
-        print(quantity)
         
         if not menuitem_id:
             return Response({"error": "menuitem_id is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -195,12 +197,160 @@ class DeliveryUserGroupView(APIView):
             return Response({"message": "User not found"}, status.HTTP_404_NOT_FOUND)
     
 
-# @api_view(['GET'])
-# @permission_classes([IsAuthenticated, IsManager])
-# def manager_list(request):
-#     if request.user.groups.filter(name="Manager").exists():
-#         managers = User.objects.filter(groups__name="Manager")
-#         serializer = UserSerializer(managers, many=True)
-#         return Response(serializer.data)
-#     else:
-#         return Response({"message": "You do not have permission to perform this action."}, 403)
+# Class View for managing Orders
+class OrderCustomerView(APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsCustomerOrManagerOrDeliveryCrew()]
+        elif self.request.method == 'POST':
+            return [IsCustomer()]
+        elif self.request.method in ['DELETE', 'PUT']:
+            return [IsManager()]
+        elif self.request.method == 'PATCH':
+            return [IsManagerOrDeliveryCrew()]
+        return []
+         
+    def get(self, request, *args, **kwargs):
+        order_id = kwargs.get('orderId') 
+        current_user = request.user
+
+        if current_user.groups.filter(name="Customer").exists(): # If user is Customer
+            if order_id:
+                try:
+                    order = Order.objects.get(id=order_id)
+
+                    if order.user != current_user:
+                        return Response({"message": "You don't have acces to this order. You can only access Your order"}, status.HTTP_403_FORBIDDEN)
+
+                    order_items = OrderItem.objects.filter(order=order).select_related('menuitem')
+                    serializer = OrderItemSerializer(order_items, many=True)
+                    return Response(serializer.data, status=status.HTTP_200_OK)
+                
+                except Order.DoesNotExist:
+                    return Response({"message": "Order not found"}, status.HTTP_404_NOT_FOUND)
+            else:   
+                orders = Order.objects.filter(user=request.user)
+            
+        elif current_user.groups.filter(name="Manager").exists(): # If user is Manager
+            orders = Order.objects.all().select_related('user')
+        
+        elif current_user.groups.filter(name="Delivery Crew").exists(): # If User is from Delivery Crew
+            orders = Order.objects.filter(delivery_crew=request.user)
+            
+        serializer = OrderSerializer(orders, many=True)        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+   
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        # Get current user
+        current_user = request.user
+
+        # Savoing point for rollback
+        sid = transaction.savepoint()
+
+        try:
+            # Get items on cart from the current user
+            cart_items = Cart.objects.filter(user=current_user).select_related('menuitem')
+            if not cart_items.exists():
+                transaction.savepoint_rollback(sid)
+                return Response({'message': 'Empty Card.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Create new order table
+            new_order = Order.objects.create(
+                user= current_user,
+                status= False,
+                total= 0,
+                date= datetime.now().date()
+            )
+
+            # For each cart item : create a new record in OrderItem table
+            total=0 # Total variable to store the total price of an order
+            for item in cart_items:
+                item_dict = {
+                    'order' : new_order,
+                    'menuitem' : item.menuitem,
+                    'quantity' : item.quantity,
+                    'unit_price' : item.unit_price,
+                    'price' : item.price
+                }
+                total += item.price
+                OrderItem.objects.create(**item_dict)
+
+            # Updating the total in the Order
+            new_order.total = total
+            new_order.save()
+
+            # Flushing the cart of the user
+            cart_items.delete()
+
+            # Display the results
+            serializer = OrderSerializer(new_order)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        except Exception as e:
+            transaction.savepoint_rollback(sid)
+            return Response({'message': f"An Error Occured: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    def delete(self, request, *args, **kwargs):
+        order_id = kwargs.get('orderId')
+        if not order_id:
+            return Response({'message': f"You need to specify an Order"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            try:
+                order = Order.objects.get(id=order_id)
+                order.delete()
+                return Response("", status=status.HTTP_204_NO_CONTENT)
+            except Order.DoesNotExist:
+                return Response({'message': f"Order not Found"}, status=status.HTTP_404_NOT_FOUND)
+
+    def patch(self, request, *args, **kwargs):
+        order_id = kwargs.get('orderId')
+        status_value = bool(int(request.data.get('status')))
+        delivery_crew_id = request.data.get('delivery_crew_id')
+        current_user = request.user
+
+        if not order_id:
+            return Response({'message': "You need to specify an order"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            order = Order.objects.get(id=order_id)
+        except Order.DoesNotExist:
+            return Response({'message': "Order Not Found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Cas 1 : Manager peut assigner un livreur
+        if is_user_in_group(current_user, "Manager") and delivery_crew_id:
+            try:
+                delivery_user = User.objects.get(id=delivery_crew_id)
+                order.delivery_crew = delivery_user
+                order.save()
+                serializer = OrderSerializer(order)
+                return Response({'message': "Delivery user assigned", "order": serializer.data}, status=status.HTTP_200_OK)
+            except User.DoesNotExist:
+                return Response({'message': "Delivery User Not Found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Cas 2 : Manager ou livreur peut mettre à jour le statut
+        if is_user_in_group(current_user, "Manager") or is_user_in_group(current_user, "Delivery Crew"):
+            if order.delivery_crew != current_user and not is_user_in_group(current_user, "Manager"):
+                return Response({'message': "You can't modify this order"}, status=status.HTTP_403_FORBIDDEN)
+            if status_value is not None:
+                order.status = status_value
+                print(bool(status_value))
+                order.save()
+                serializer = OrderSerializer(order)
+                return Response({'message': "Order status updated", "order": serializer.data}, status=status.HTTP_200_OK)
+
+        return Response({'message': "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+            
+    def put(self, request, *args, **kwargs):
+        order_id = kwargs.get('orderId')
+ 
+        try:
+            order = Order.objects.get(id=order_id)
+        except Order.DoesNotExist:
+            return Response({'message': "Order Not Found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = OrderSerializer(order, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': "Order updated successfully", "order": serializer.data}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
