@@ -1,14 +1,29 @@
 #This file contains username, password and role for the users
 
-+----------+----------------+----------------+
-| User     | Password       | Role           |
-+----------+----------------+----------------+
-| admin    | lemon@adm!     | admin, Manager |
-| bobby    | lemon@bob!     | Customer       |
-| guyzo    | lemon@guy!     | Customer       |
-| livreur  | lemon@liv!     | Delivery Crew  |
-| sarah    | lemon@sar!     | Manager        |
-+----------+----------------+----------------+
++--------------------------------------------------------------------------+
+| When creating the project, I typed _Littlemon_ instead of _LittleLemon_. |
+| So you have to run `cd Littlemon` instead of `cd LittleLemon`.           |
+| Thanks for your understanding.                                           |
++--------------------------------------------------------------------------+
+
+Differents User and role
+
+
++----------+----------------+---------------------+
+| User     | Password       | Role                |
++----------+----------------+---------------------+
+| admin    | lemon@adm!     | admin, Manager      |
+| bobby    | lemon@bob!     | Customer            |
+| guyzo    | lemon@guy!     | Customer            |
+| livreur  | lemon@liv!     | Delivery Crew       |
+| sarah    | lemon@sar!     | Manager             |
+| lilly    | lemon@lil!     | No role             |
+| lolo     | lemon@lol!     | No role             |
++----------+----------------+---------------------+
 
 
 When entering status value for testing whe have decided that 0 is False aand other numerical value is True
+
+For throttling
+    # 5 request per minute for anonymous user
+    # 10 request per minute for authenticated user

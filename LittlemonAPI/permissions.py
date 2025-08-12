@@ -29,12 +29,15 @@ class IsCustomerOrManagerOrDeliveryCrew(BasePermission):
     
 
 class IsManagerOrDeliveryCrew(BasePermission):
-    """
-    Autorise l'accès si l'utilisateur est Manager ou Delivery Crew
-    """
     def has_permission(self, request, view):
         return request.user.groups.filter(
             name__in=["Manager", "Delivery Crew"]
+        ).exists()
+
+class IsManagerOrAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.groups.filter(
+            name__in=["Manager", "Admin"]
         ).exists()
     
 

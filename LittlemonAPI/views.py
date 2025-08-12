@@ -19,9 +19,14 @@ class MenuItemListCreateView(generics.ListCreateAPIView):
     queryset = MenuItem.objects.all()
     serializer_class = MenuItemSerializer
 
+    ordering_fields = ['price', 'title', 'category__title']
+    search_fields = ['title', 'category__title', 'category__slug']
+    filterset_fields = ['category__title']
+    ordering = ['title', 'price']
+
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsManager(), IsAdminUser()]
+            return [IsManager()]
         return []
     
     def post(self, request, *args, **kwargs):
@@ -39,7 +44,7 @@ class MenuItemRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     def get_permissions(self):
         if self.request.method in ['PUT', 'PATCH', 'DELETE']:
             return ([IsManager()])
-        return [IsCustomer(), IsManager()]
+        return [IsAuthenticated()]
 
 
 # Class View for managing Customer Cart
@@ -98,10 +103,12 @@ class CartCustomerView(APIView):
 
 
 # Class View for managing user groups (Manager Group)
+from .permissions import IsManagerOrAdmin
+
 class ManagerUserGroupView(APIView):
     def get_permissions(self):
         if self.request.method == 'GET':
-            return ([IsManager(), IsAdminUser()])
+            return ([IsManagerOrAdmin()])
         return ([IsAdminUser()])
     
     def get(self, request):
@@ -136,7 +143,7 @@ class ManagerUserGroupView(APIView):
             user = User.objects.get(id=user_id)
             group = Group.objects.get(name='Manager')
 
-            if not user.groups.filter(name='Manager').exists():
+            if not is_user_in_group(user, 'Manager').exists():
                 return Response({"message": f"The user {user_id} don't belong to the Manager Group"}, status.HTTP_400_BAD_REQUEST)
 
             user.groups.remove(group)
@@ -187,7 +194,7 @@ class DeliveryUserGroupView(APIView):
             user = User.objects.get(id=user_id)
             group = Group.objects.get(name='Delivery Crew')
 
-            if not user.groups.filter(name='Delivery Crew').exists():
+            if not is_user_in_group(user, 'Delivery Crew').exists():
                 return Response({"message": f"The user {user_id} don't belong to the Delivery Crew Group"}, status.HTTP_400_BAD_REQUEST)
 
             user.groups.remove(group)
@@ -195,10 +202,11 @@ class DeliveryUserGroupView(APIView):
         
         except User.DoesNotExist:
             return Response({"message": "User not found"}, status.HTTP_404_NOT_FOUND)
-    
+
 
 # Class View for managing Orders
 class OrderCustomerView(APIView):
+
     def get_permissions(self):
         if self.request.method == 'GET':
             return [IsCustomerOrManagerOrDeliveryCrew()]
@@ -214,7 +222,7 @@ class OrderCustomerView(APIView):
         order_id = kwargs.get('orderId') 
         current_user = request.user
 
-        if current_user.groups.filter(name="Customer").exists(): # If user is Customer
+        if is_user_in_group(current_user, "Customer").exists(): # If user is Customer
             if order_id:
                 try:
                     order = Order.objects.get(id=order_id)
@@ -231,10 +239,10 @@ class OrderCustomerView(APIView):
             else:   
                 orders = Order.objects.filter(user=request.user)
             
-        elif current_user.groups.filter(name="Manager").exists(): # If user is Manager
+        elif is_user_in_group(current_user, "Manager").exists(): # If user is Manager
             orders = Order.objects.all().select_related('user')
         
-        elif current_user.groups.filter(name="Delivery Crew").exists(): # If User is from Delivery Crew
+        elif is_user_in_group(current_user, "Delivery Crew").exists(): # If User is from Delivery Crew
             orders = Order.objects.filter(delivery_crew=request.user)
             
         serializer = OrderSerializer(orders, many=True)        
